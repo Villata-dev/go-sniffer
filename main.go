@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 )
 
@@ -51,7 +51,37 @@ func main() {
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	fmt.Printf("Capturing packets on device %s...\n", *device)
 	for packet := range packetSource.Packets() {
-		// Process packets here
-		fmt.Printf("Paquete capturado: [%s] Longitud: [%d] bytes\n", packet.Metadata().Timestamp.Format(time.RFC3339Nano), len(packet.Data()))
+		// Extract IPv4 layer
+		ipLayer := packet.Layer(layers.LayerTypeIPv4)
+		if ipLayer == nil {
+			continue
+		}
+		ip, _ := ipLayer.(*layers.IPv4)
+
+		// Extract transport layer (TCP or UDP)
+		var protocol string
+		var srcPort, dstPort string
+
+		if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
+			tcp, _ := tcpLayer.(*layers.TCP)
+			protocol = "TCP"
+			srcPort = fmt.Sprintf("%d", tcp.SrcPort)
+			dstPort = fmt.Sprintf("%d", tcp.DstPort)
+		} else if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
+			udp, _ := udpLayer.(*layers.UDP)
+			protocol = "UDP"
+			srcPort = fmt.Sprintf("%d", udp.SrcPort)
+			dstPort = fmt.Sprintf("%d", udp.DstPort)
+		}
+
+		// Display packet information
+		if protocol != "" {
+			fmt.Printf("[%s] %s:%s -> %s:%s (len: %d)\n",
+				protocol, ip.SrcIP, srcPort, ip.DstIP, dstPort, len(packet.Data()))
+		} else {
+			// Handle IPv4 packets without TCP/UDP (e.g., ICMP)
+			fmt.Printf("[IPv4] %s -> %s (len: %d)\n",
+				ip.SrcIP, ip.DstIP, len(packet.Data()))
+		}
 	}
 }
