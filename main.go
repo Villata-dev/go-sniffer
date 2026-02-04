@@ -48,9 +48,18 @@ func main() {
 	defer handle.Close()
 
 	// Use a PacketSource to process packets
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	fmt.Printf("Capturing packets on device %s...\n", *device)
-	for packet := range packetSource.Packets() {
+
+	for {
+		data, _, err := handle.ReadPacketData()
+		if err != nil {
+			log.Printf("Error reading packet: %v", err)
+			continue
+		}
+
+		// Use NewPacket to process raw data
+		packet := gopacket.NewPacket(data, handle.LinkType(), gopacket.Default)
+
 		// Extract IPv4 layer
 		ipLayer := packet.Layer(layers.LayerTypeIPv4)
 		if ipLayer == nil {
@@ -77,11 +86,11 @@ func main() {
 		// Display packet information
 		if protocol != "" {
 			fmt.Printf("[%s] %s:%s -> %s:%s (len: %d)\n",
-				protocol, ip.SrcIP, srcPort, ip.DstIP, dstPort, len(packet.Data()))
+				protocol, ip.SrcIP, srcPort, ip.DstIP, dstPort, len(data))
 		} else {
 			// Handle IPv4 packets without TCP/UDP (e.g., ICMP)
 			fmt.Printf("[IPv4] %s -> %s (len: %d)\n",
-				ip.SrcIP, ip.DstIP, len(packet.Data()))
+				ip.SrcIP, ip.DstIP, len(data))
 		}
 	}
 }
