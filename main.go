@@ -22,6 +22,7 @@ func main() {
 	// Flag for selecting the interface
 	list := flag.Bool("list", false, "List all available network interfaces")
 	device := flag.String("device", "", "Network interface to capture packets from")
+	filter := flag.String("filter", "", "BPF filter for packet capture")
 	flag.Parse()
 
 	if *list || (*device == "" && len(os.Args) == 1) {
@@ -47,9 +48,21 @@ func main() {
 	}
 	defer handle.Close()
 
+	// Apply BPF filter if provided
+	if *filter != "" {
+		err = handle.SetBPFFilter(*filter)
+		if err != nil {
+			log.Fatalf("Error applying BPF filter '%s': %v", *filter, err)
+		}
+	}
+
 	// Use a PacketSource to process packets
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-	fmt.Printf("Capturing packets on device %s...\n", *device)
+	if *filter != "" {
+		fmt.Printf("Escuchando en %s con filtro: %s...\n", *device, *filter)
+	} else {
+		fmt.Printf("Capturing packets on device %s...\n", *device)
+	}
 	for packet := range packetSource.Packets() {
 		// Extract IPv4 layer
 		ipLayer := packet.Layer(layers.LayerTypeIPv4)
