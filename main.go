@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
+	"unicode"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -91,10 +93,62 @@ func main() {
 		if protocol != "" {
 			fmt.Printf("[%s] %s:%s -> %s:%s (len: %d)\n",
 				protocol, ip.SrcIP, srcPort, ip.DstIP, dstPort, len(packet.Data()))
+			inspectPayload(packet)
 		} else {
 			// Handle IPv4 packets without TCP/UDP (e.g., ICMP)
 			fmt.Printf("[IPv4] %s -> %s (len: %d)\n",
 				ip.SrcIP, ip.DstIP, len(packet.Data()))
+		}
+	}
+}
+
+func inspectPayload(packet gopacket.Packet) {
+	appLayer := packet.ApplicationLayer()
+	if appLayer == nil {
+		return
+	}
+
+	payload := appLayer.Payload()
+	if len(payload) == 0 {
+		return
+	}
+
+	// Filter printable ASCII and truncate to 200 characters
+	var sb strings.Builder
+	for i, b := range payload {
+		if i >= 200 {
+			break
+		}
+		if unicode.IsPrint(rune(b)) || b == '\n' || b == '\r' || b == '\t' {
+			sb.WriteByte(b)
+		} else {
+			sb.WriteByte('.')
+		}
+	}
+	cleanPayload := sb.String()
+
+	// Detect HTTP patterns
+	httpPatterns := []string{"GET ", "POST ", "HTTP/1.1", "Authorization:", "Cookie:", "User-Agent:"}
+	isHTTP := false
+	for _, pattern := range httpPatterns {
+		if strings.Contains(cleanPayload, pattern) {
+			isHTTP = true
+			break
+		}
+	}
+
+	if isHTTP {
+		fmt.Println("\n*** HTTP TRAFFIC DETECTED ***")
+		fmt.Println(cleanPayload)
+		fmt.Println("*****************************")
+	}
+
+	// Detect sensitive keywords
+	sensitiveKeywords := []string{"user", "pass", "login", "password"}
+	for _, keyword := range sensitiveKeywords {
+		if strings.Contains(strings.ToLower(cleanPayload), keyword) {
+			fmt.Println("\033[31m[!] ALERTA ROJA: SENSITIVE DATA DETECTED [!]\033[0m")
+			break
 		}
 	}
 }
