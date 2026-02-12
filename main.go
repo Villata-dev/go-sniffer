@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"unicode"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/google/gopacket/pcapgo"
 )
 
 func main() {
@@ -25,6 +28,7 @@ func main() {
 	list := flag.Bool("list", false, "List all available network interfaces")
 	device := flag.String("device", "", "Network interface to capture packets from")
 	filter := flag.String("filter", "", "BPF filter for packet capture")
+	output := flag.String("output", "", "Path to the output .pcap file")
 	flag.Parse()
 
 	if *list || (*device == "" && len(os.Args) == 1) {
@@ -44,11 +48,27 @@ func main() {
 	}
 
 	// Open device
-	handle, err := pcap.OpenLive(*device, 1024, true, pcap.BlockForever)
+	handle, err := pcap.OpenLive(*device, 65536, true, pcap.BlockForever)
 	if err != nil {
 		log.Fatalf("Error opening device %s: %v. Try running with sudo.", *device, err)
 	}
 	defer handle.Close()
+
+	// Initialize PCAP writer if -output is provided
+	var pcapWriter *pcapgo.Writer
+	if *output != "" {
+		f, err := os.Create(*output)
+		if err != nil {
+			log.Fatalf("Error creating output file %s: %v", *output, err)
+		}
+		defer f.Close()
+
+		pcapWriter = pcapgo.NewWriter(f)
+		if err := pcapWriter.WriteFileHeader(65536, layers.LinkTypeEthernet); err != nil {
+			log.Fatalf("Error writing PCAP header: %v", err)
+		}
+		fmt.Printf("Saving packets to: %s\n", *output)
+	}
 
 	// Apply BPF filter if provided
 	if *filter != "" {
@@ -58,6 +78,15 @@ func main() {
 		}
 	}
 
+	// Setup signal handling for clean shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\nInterrupción detectada. Cerrando captura...")
+		handle.Close()
+	}()
+
 	// Use a PacketSource to process packets
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	if *filter != "" {
@@ -66,6 +95,14 @@ func main() {
 		fmt.Printf("Capturing packets on device %s...\n", *device)
 	}
 	for packet := range packetSource.Packets() {
+		// Save packet if pcapWriter is active
+		if pcapWriter != nil {
+			err := pcapWriter.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+			if err != nil {
+				log.Printf("Error writing packet to file: %v", err)
+			}
+		}
+
 		// Extract IPv4 layer
 		ipLayer := packet.Layer(layers.LayerTypeIPv4)
 		if ipLayer == nil {
