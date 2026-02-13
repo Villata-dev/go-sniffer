@@ -44,6 +44,12 @@ Para iniciar la captura en una interfaz específica (ej: `eth0`) con un filtro B
 sudo ./go-sniffer -device eth0 -filter "tcp port 80"
 ```
 
+Para guardar los paquetes capturados en un archivo .pcap compatible con Wireshark:
+
+```bash
+sudo ./go-sniffer -device eth0 -output captura.pcap
+```
+
 Si deseas capturar todo el tráfico IPv4 en `eth0`:
 
 ```bash
